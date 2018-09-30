@@ -2,69 +2,73 @@
 using System.Collections.Generic;
 using UnityEngine;
 
-public class MapManager : Singleton<MapManager>
+public enum MapCoord { xy, xz };
+public class MapManager : MonoBehaviour
 {
+    public Vector2Int size = new Vector2Int(5, 5);
+    public Vector2 nodeSize = new Vector2(1, 1);
     public GameObject prefab_node;
-    public float nodePaddingX = 1;
-    public float nodePaddingY = 1;
-    public Vector2 originPoint;
-    //偶数行X偏移
-    public float evenLineOffsetX;
 
-    [HideInInspector]
-    public GameObject[,] nodeItems;
+    public MapCoord coord;
+    public bool autoCentered = false;
+    public LayerMask layer_wall;
 
-    public void GenerateMap()
+    protected Node[,] nodes;
+    GameObject[,] nodeItems;
+    Vector2 originGeneratePoint = Vector2.zero;
+
+    protected Vector3 pos;
+    float x, y;
+
+    //生成地图
+    public virtual void GenerateMap()
     {
-        int mapSizeX = NodeManager.Instance().nodeCountX;
-        int mapSizeY = NodeManager.Instance().nodeCountY;
+        nodes = new Node[size.x, size.y];
+        nodeItems = new GameObject[size.x, size.y];
 
-        nodeItems = new GameObject[mapSizeY, mapSizeX];
-
-        // 生成节点的真正源点
-        Vector2 originGeneratePoint;
-        originGeneratePoint.x = originPoint.x - mapSizeX / 2 * nodePaddingX;
-        if(mapSizeX % 2 == 0)
+        //自动居中
+        if (autoCentered)
         {
-            //originGeneratePoint.x -= nodePaddingX / 2;
+            originGeneratePoint.x = size.x / 2 * nodeSize.x;
+            originGeneratePoint.y = size.y / 2 * nodeSize.y;
         }
-        originGeneratePoint.y = originPoint.y - mapSizeY / 2 * nodePaddingY;
-        if (mapSizeY % 2 == 0)
+
+        for (int y = 0; y < size.y; y++)
         {
-            //originGeneratePoint.y -= nodePaddingY / 2;
-        }
-        for (int i = 0; i < mapSizeY; i++)
-        {
-            float specialX = 0;
-            if (evenLineOffsetX != 0)
+            for (int x = 0; x < size.x; x++)
             {
-                specialX = i % 2 == 0 ? 0 : nodePaddingX * evenLineOffsetX;
-            }
+                nodeItems[x, y] = Instantiate(prefab_node, NodeInit(x, y), Quaternion.identity, parent);
+                nodeItems[x, y].GetComponent<NodeItem>().pos = new Vector2Int(x, y);
+                nodeItems[x, y].GetComponent<NodeItem>().OnMousePress += OnNodePressed;
+                nodeItems[x, y].GetComponent<NodeItem>().OnMouseIn += OnNodeHovered;
+                nodeItems[x, y].GetComponent<NodeItem>().OnMouseOut += OnNodeUnhovered;
 
-            for (int j = 0; j < mapSizeX; j++)
-            {
-                float y = i * nodePaddingY;
-                Vector2 pos = new Vector2(j * nodePaddingX + specialX, y);
-                pos += originGeneratePoint;
-                GameObject go = Instantiate(prefab_node, pos, Quaternion.identity, ParentManager.Instance().GetParent("Node"));
-                go.name = "Node_" + i + "_" + j;
-                nodeItems[i, j] = go;
-                go.GetComponent<NodeItem>().pos = new Vector2Int(i, j);
-                go.GetComponent<NodeItem>().absPos = new Vector2Int(i, j);
-                go.GetComponent<NodeItem>().Init();
-                go.GetComponent<NodeItem>().SetOrderInLayer(2 * (mapSizeY - i));
-
-                go.GetComponent<NodeItem>().ToggleFogOfWar(true);
-
+                bool walkable = !Physics.CheckSphere(pos, nodeSize.x / 2, layer_wall);
+                nodes[x, y] = new Node(x, y, walkable);
             }
         }
     }
 
-    public GameObject GetNearbyNode(GameObject _go, int _index)
+    //节点被按下
+    public virtual void OnNodePressed(NodeItem _node) { }
+    //鼠标进入节点
+    public virtual void OnNodeHovered(NodeItem _node) { }
+    //鼠标离开节点
+    public virtual void OnNodeUnhovered(NodeItem _node) { }
+
+    public virtual Vector3 NodeInit(int _x, int _y)
     {
-        NodeItem nodeItem = _go.GetComponent<NodeItem>();
-        Node node = NodeManager.Instance().GetNearbyNode(nodeItem.absPos, _index);
-        return GetNodeItemFromAbsPos(node.pos);
+        //移动节点
+        x = _x * nodeSize.x;
+        y = _y * nodeSize.y;
+        if (autoCentered)
+        {
+            x -= originGeneratePoint.x;
+            y -= originGeneratePoint.y;
+        }
+
+        pos = coord == MapCoord.xy ? new Vector3(x, y, 0) : new Vector3(x, 0, y);
+        return pos;
     }
 
     public GameObject GetNodeItem(Vector2Int _pos)
@@ -72,76 +76,121 @@ public class MapManager : Singleton<MapManager>
         return nodeItems[_pos.x, _pos.y];
     }
 
-    public GameObject GetNodeItemFromAbsPos(Vector2Int _pos)
+    public Node GetNode(Vector2Int _pos)
     {
-        for (int i = 0; i < NodeManager.Instance().nodeCountY; i++)
-        {
-            for (int j = 0; j < NodeManager.Instance().nodeCountX; j++)
-            {
-                if (nodeItems[i, j].GetComponent<NodeItem>().absPos == _pos)
-                    return nodeItems[i, j];
-            }
-        }
-        return null;
-    }
-    //获取相邻所有节点
-    public List<GameObject> GetNearbyNodeItems(GameObject _go)
-    {
-        Vector2Int pos = _go.GetComponent<NodeItem>().absPos;
-
-        List<GameObject> nodeItemList = new List<GameObject>();
-        foreach (var item2 in NodeManager.Instance().GetNearbyNodes(pos))
-        {
-            nodeItemList.Add(GetNodeItemFromAbsPos(item2.pos));
-        }
-    
-        return nodeItemList;
+        return nodes[_pos.x, _pos.y];
     }
 
-    //获取所有节点
-    public List<GameObject> GetAllNodeItems()
+    //获取周围节点
+    public virtual List<Node> GetNearbyNodes(Node _node)
     {
-        List<GameObject> nodeItemList = new List<GameObject>();
-        for (int i = 0; i < NodeManager.Instance().nodeCountY; i++)
+        List<Node> list = new List<Node>();
+        Vector2Int pos = _node.pos;
+        Vector2Int p;
+        for (int i = -1; i < 2; i++)
         {
-            for (int j = 0; j < NodeManager.Instance().nodeCountX; j++)
+            for (int j = -1; j < 2; j++)
             {
-                nodeItemList.Add(nodeItems[i, j]);
+                //去除中心点
+                if (!(i == 0 && j == 0))
+                {
+                    p = new Vector2Int(pos.x + i, pos.y + j);
+                    if (0 <= p.x && p.x < size.x &&
+                       0 <= p.y && p.y < size.y)
+                    {
+                        list.Add(nodes[p.x, p.y]);
+                    }
+                }
             }
         }
 
-        return nodeItemList;
+        return list;
     }
 
-    //获取范围内所有节点
-    public List<GameObject> GetNodesWithinRange(GameObject _go, int _range)
+    //获取范围内节点
+    public virtual List<Node> GetNodesWithinRange(Node _node, int _range)
+    {
+        List<Node> list = new List<Node>();
+        if (_range == 1)
+        {
+            list = GetNearbyNodes(_node);
+        }
+        else
+        {
+            list = GetNodesWithinRange(_node, _range - 1);
+            int listCount = list.Count;
+            for (int i = 0; i < listCount; i++)
+            {
+                foreach (Node item in GetNearbyNodes(list[i]))
+                {
+                    if (!list.Contains(item))
+                        list.Add(item);
+
+                }
+            }
+        }
+
+        //list.Remove(_node);
+
+        return list;
+    }
+
+    //获取周围节点单位
+    public virtual List<GameObject> GetNodeItemsWithinRange(GameObject _go, int _range, bool _includeOrigin = false)
     {
         List<GameObject> list = new List<GameObject>();
-        Vector2Int pos = _go.GetComponent<NodeItem>().absPos;
-
-        Node node = NodeManager.Instance().GetNode(pos);
-
-        foreach (Node item in NodeManager.Instance().GetNodesWithinRange(node, _range))
+        foreach (var item in GetNodesWithinRange(GetNode(_go.GetComponent<NodeItem>().pos), _range))
         {
-            GameObject go = GetNodeItemFromAbsPos(item.pos);
-            list.Add(go);
+            list.Add(GetNodeItem(item.pos));
         }
 
+        if (!_includeOrigin)
+            list.Remove(_go);
         return list;
     }
 
-    public List<GameObject> GetNearbyNodesWithinRange(GameObject _go, int _range)
+    //判断节点存在
+    protected bool isNodeAvailable(Vector2Int _pos)
     {
-        List<GameObject> list = GetNearbyNodesWithinRange(_go.GetComponent<NodeItem>().absPos, _range);
-        list.Remove(_go);
+        if (0 <= _pos.x && _pos.x < size.x &&
+            0 <= _pos.y && _pos.y < size.y)
+        {
+            return true;
+        }
 
-        return list;
+        return false;
     }
 
-    public List<GameObject> GetNearbyNodesWithinRange(Vector2Int _pos, int _range)
+    public Transform parent
     {
-        GameObject go = GetNodeItemFromAbsPos(_pos);
-        return GetNodesWithinRange(go, _range);
+        get
+        {
+            return ParentManager.instance.GetParent(this.GetType().Name);
+        }
+    }
+}
+
+public class Node
+{
+    public Vector2Int pos;
+    public bool walkable = true;
+    public Node parentNode;
+
+    public Node(int _x, int _y, bool _walkable = true)
+    {
+        pos.x = _x;
+        pos.y = _y;
+        walkable = _walkable;
     }
 
+    public int x { get { return pos.x; } }
+    public int y { get { return pos.y; } }
+
+    //g:和起点距离, h:和终点距离
+    public int g, h;
+
+    public int f
+    {
+        get { return g + h; }
+    }
 }
