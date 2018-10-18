@@ -14,7 +14,7 @@ public class MapManager : MonoBehaviour
     public LayerMask layer_wall;
 
     protected Node[,] nodes;
-    GameObject[,] nodeItems;
+    NodeItem[,] nodeItems;
     Vector2 originGeneratePoint = Vector2.zero;
 
     protected Vector3 pos;
@@ -24,7 +24,7 @@ public class MapManager : MonoBehaviour
     public virtual void GenerateMap()
     {
         nodes = new Node[size.x, size.y];
-        nodeItems = new GameObject[size.x, size.y];
+        nodeItems = new NodeItem[size.x, size.y];
 
         //自动居中
         if (autoCentered)
@@ -37,7 +37,8 @@ public class MapManager : MonoBehaviour
         {
             for (int x = 0; x < size.x; x++)
             {
-                nodeItems[x, y] = Instantiate(prefab_node, NodeInit(x, y), Quaternion.identity, parent);
+                nodeItems[x, y] = Instantiate(prefab_node, NodeInit(x, y), Quaternion.identity, parent)
+                                    .GetComponent<NodeItem>();
                 nodeItems[x, y].GetComponent<NodeItem>().pos = new Vector2Int(x, y);
                 nodeItems[x, y].GetComponent<NodeItem>().OnMousePress += OnNodePressed;
                 nodeItems[x, y].GetComponent<NodeItem>().OnMouseIn += OnNodeHovered;
@@ -71,7 +72,7 @@ public class MapManager : MonoBehaviour
         return pos;
     }
 
-    public GameObject GetNodeItem(Vector2Int _pos)
+    public NodeItem GetNodeItem(Vector2Int _pos)
     {
         return nodeItems[_pos.x, _pos.y];
     }
@@ -108,7 +109,7 @@ public class MapManager : MonoBehaviour
     }
 
     //获取范围内节点
-    public virtual List<Node> GetNodesWithinRange(Node _node, int _range)
+    public virtual List<Node> GetNodesWithinRange(Node _node, int _range, bool _walkable)
     {
         List<Node> list = new List<Node>();
         if (_range == 1)
@@ -117,29 +118,29 @@ public class MapManager : MonoBehaviour
         }
         else
         {
-            list = GetNodesWithinRange(_node, _range - 1);
+            list = GetNodesWithinRange(_node, _range - 1, _walkable);
             int listCount = list.Count;
             for (int i = 0; i < listCount; i++)
             {
-                foreach (Node item in GetNearbyNodes(list[i]))
-                {
-                    if (!list.Contains(item))
-                        list.Add(item);
-
-                }
+                //如果要求是可到达节点
+                if ((!_walkable || (_walkable && list[i].walkable)))
+                    foreach (Node item in GetNearbyNodes(list[i]))
+                    {
+                        if (!list.Contains(item))
+                            list.Add(item);
+                    }
             }
         }
-
-        //list.Remove(_node);
 
         return list;
     }
 
     //获取周围节点单位
-    public virtual List<GameObject> GetNodeItemsWithinRange(GameObject _go, int _range, bool _includeOrigin = false)
+    public virtual List<NodeItem> GetNodeItemsWithinRange(NodeItem _go, int _range,
+           bool _walkable = false, bool _includeOrigin = false)
     {
-        List<GameObject> list = new List<GameObject>();
-        foreach (var item in GetNodesWithinRange(GetNode(_go.GetComponent<NodeItem>().pos), _range))
+        List<NodeItem> list = new List<NodeItem>();
+        foreach (var item in GetNodesWithinRange(GetNode(_go.pos), _range, _walkable))
         {
             list.Add(GetNodeItem(item.pos));
         }
