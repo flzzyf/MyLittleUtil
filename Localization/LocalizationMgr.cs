@@ -16,6 +16,7 @@ public class LocalizationMgr : Singleton<LocalizationMgr>
     Dictionary<string, string> textDic;
     //所有本地化文本组件
     public List<LocalizationText> localizationTexts;
+    public List<LocalizationFont> localizationFonts;
 
     public Font font { get { return fonts[(int)language]; } }
 
@@ -36,6 +37,11 @@ public class LocalizationMgr : Singleton<LocalizationMgr>
         {
             text.Init();
         }
+
+        foreach (LocalizationFont text in localizationFonts)
+        {
+            text.Init();
+        }
     }
     //加载语音文件，将内容放入字典
     public void LoadLanguage(Language _language)
@@ -50,10 +56,10 @@ public class LocalizationMgr : Singleton<LocalizationMgr>
         string[] lines = text.Split('\n');
         foreach (string line in lines)
         {
-            if (line == null || line == "")
+            if (line == null || line == "" || !line.Contains("="))
                 continue;
 
-            string[] s = line.Split('=');
+            string[] s = line.Split(new[] { '=' }, 2);
             textDic.Add(s[0], s[1]);
         }
     }
@@ -63,11 +69,13 @@ public class LocalizationMgr : Singleton<LocalizationMgr>
         if (textDic.ContainsKey(_key))
             return System.Text.RegularExpressions.Regex.Unescape(textDic[_key]);
 
+        Debug.LogWarning(_key + "键缺失！");
         return _key.ToString();
     }
 
-    public void SetText(Text _text, string _key)
+    public void SetText(LocalizationText _text, string _key)
     {
-        _text.text = GetText(_key);
+        _text.key = _key;
+        _text.Init();
     }
 }

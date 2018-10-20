@@ -11,6 +11,8 @@ public class LocalizationText : MonoBehaviour
     void OnEnable()
     {
         LocalizationMgr.instance.localizationTexts.Add(this);
+
+        Init();
     }
 
     public void ChangeToLanguage(Language _language)
@@ -22,7 +24,7 @@ public class LocalizationText : MonoBehaviour
 
     public void Init()
     {
-        if (key == null)
+        if (key == "")
             return;
 
         GetComponent<Text>().font = LocalizationMgr.instance.font;
